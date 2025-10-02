@@ -1,8 +1,14 @@
+# bot.py
+import os
+from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-# التوكن مباشرة
-TELEGRAM_TOKEN = "8211953729:AAGp9UVapIdIPbiwCrYl-Ut63qerlTdVjbI"
+# تحميل متغيرات البيئة من ملف .env
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+if not TELEGRAM_TOKEN:
+    raise RuntimeError("❌ TELEGRAM_TOKEN غير محدد! أضف المتغير في .env أو Environment Variables")
 
 # قائمة المحاصيل السورية
 crops = ["قمح", "زيتون", "قطن", "عنب", "حمضيات"]
@@ -46,20 +52,24 @@ crop_advices = {
     ]
 }
 
-# القائمة الرئيسية
+# القائمة الرئيسية مقسمة عمودين
 def get_main_menu():
     keyboard = [
-        [KeyboardButton("🌾 المحاصيل")],
-        [KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي")],
-        [KeyboardButton(" توقعات الطقس"), KeyboardButton(" الخرائط الزراعية")]
+        [ KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل"),],
+        [KeyboardButton("🌦 توقعات الطقس"), KeyboardButton("🗺 الخرائط الزراعية")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# قائمة المحاصيل
+# قائمة المحاصيل مقسمة عمودين
 def get_crops_menu():
-    keyboard = [[KeyboardButton(crop)] for crop in crops]
-    keyboard.append([KeyboardButton("⬅️ رجوع للقائمة")])
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    # تقسيم المحاصيل إلى صفوف كل صف فيه زرّين
+    rows = []
+    for i in range(0, len(crops), 2):
+        row = crops[i:i+2]
+        rows.append([KeyboardButton(c) for c in row])
+    # زر رجوع
+    rows.append([KeyboardButton("⬅️ رجوع للقائمة")])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -95,8 +105,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", start))
     app.add_handler(CommandHandler("menu", start))
-
-    # استقبال النصوص من الكيبورد
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("✅ البوت يعمل — استعد لاستقبال الرسائل (ReplyKeyboard).")
