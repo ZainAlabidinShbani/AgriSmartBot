@@ -1,148 +1,30 @@
+# bot.py
 import os
+import asyncio
 import logging
-import random
-import requests
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from apscheduler.schedulers.background import BackgroundScheduler
-import asyncio
+
+from advice import crops, crop_advices, get_random_tip
+from weather import fetch_weather_by_coords, fetch_forecast_by_coords
+from ui import get_main_menu, get_crops_menu, get_weather_menu
 
 # ======================
 # تحميل متغيرات البيئة
 # ======================
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
-
 if not TELEGRAM_TOKEN:
     raise RuntimeError("❌ TELEGRAM_TOKEN غير محدد!")
-if not OPENWEATHER_API_KEY:
-    raise RuntimeError("❌ OPENWEATHER_API_KEY غير محدد!")
 
 # ======================
 # إعدادات البوت
 # ======================
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-DEFAULT_CITY = "Latakia"  # المدينة الافتراضية للطقس
-
-# قائمة النصائح الزراعية العشوائية
-random_tips = [
-    "قم بري النباتات في الصباح الباكر لتقليل التبخر.",
-    "تجنب الري في ساعات الظهيرة الحارة.",
-    "استخدم السماد العضوي لتحسين جودة التربة.",
-    "راقب النباتات بانتظام لاكتشاف أي آفات مبكراً.",
-    "التقليم المنتظم يساعد على زيادة الإنتاج."
-]
-
-# المستخدمين المشتركين
-subscribers = set()
-
-# قائمة المحاصيل السورية
-crops = ["قمح", "زيتون", "قطن", "عنب", "حمضيات"]
-
-# قاعدة بيانات نصائح لكل محصول
-crop_advices = {
-    "قمح": [
-        "💧 الري: يفضل الري كل 15-20 يوم بالربيع، وتقليل الري عند امتلاء السنابل.",
-        "🌱 التسميد: إضافة اليوريا بعد الإنبات ثم الفوسفور قبل التفريع.",
-        "🐛 مكافحة: مراقبة حشرة السونة ورش المبيدات عند الحاجة.",
-        "🌾 الحصاد: احصد عندما تميل السنابل للون الذهبي ويجف العود.",
-        "🏠 التخزين: خزن القمح بمكان جاف بعيد عن الرطوبة."
-    ],
-    "زيتون": [
-        "💧 الري: ري تكميلي بالصيف كل 3-4 أسابيع خاصة في سنوات الجفاف.",
-        "🌱 التسميد: إضافة السماد العضوي شتاءً والآزوت على دفعات ربيعية.",
-        "🐛 مكافحة: متابعة ذبابة الزيتون ورش الطعوم البروتينية.",
-        "🌳 الخدمة: تقليم خفيف بعد القطاف لزيادة التهوية.",
-        "🏠 التخزين: يفضل عصر الثمار مباشرة لتفادي التزنخ."
-    ],
-    "قطن": [
-        "💧 الري: يحتاج ري غزير كل 10-12 يوم خصوصاً بفترة التزهير.",
-        "🌱 التسميد: التوازن بين الآزوت والبوتاسيوم مهم لزيادة الألياف.",
-        "🐛 مكافحة: مكافحة دودة اللوز بأصناف مبيدات متناوبة.",
-        "🌾 الحصاد: اجمع القطن بعد تفتح الجوزات بـ 60-70%.",
-        "🏠 التخزين: احرص على أن تكون الأكياس جافة ونظيفة."
-    ],
-    "عنب": [
-        "💧 الري: قلل الري وقت التزهير لزيادة العقد، وزد عند امتلاء الحبات.",
-        "🌱 التسميد: التسميد العضوي شتاءً، والآزوت قبل التزهير.",
-        "🐛 مكافحة: البياض الدقيقي والبياض الزغبي أخطر الآفات — الرش بالكبريت أو النحاس ضروري.",
-        "🌿 الخدمة: تقليم شتوي جيد لزيادة التهوية وتقليل الأمراض.",
-        "🍇 الحصاد: يقطف العنب عندما يكتمل السكر ويصبح الطعم حلو."
-    ],
-    "حمضيات": [
-        "💧 الري: تجنب الغمر، واستعمل الري بالتنقيط لتفادي تعفن الجذور.",
-        "🌱 التسميد: إضافة الآزوت دفعات ربيعية وبوتاسيوم مع العقد.",
-        "🐛 مكافحة: الحذر من المن والحشرة القشرية — استخدام الزيوت المعدنية.",
-        "🌳 الخدمة: تقليم خفيف لفتح قلب الشجرة ودخول الشمس.",
-        "🍊 الحصاد: اجمع الثمار عند اكتمال اللون البرتقالي — لا تتركها زيادة عالشجرة."
-    ]
-}
-
-# ======================
-# قوائم الواجهة
-# ======================
-def get_main_menu():
-    keyboard = [
-        [KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل")],
-        [KeyboardButton("🌦 الطقس الحالي"), KeyboardButton("📅 توقعات 3 أيام")],
-        [KeyboardButton("🗺 الخرائط الزراعية")],
-        [KeyboardButton("/subscribe"), KeyboardButton("/unsubscribe")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-def get_crops_menu():
-    rows = []
-    for i in range(0, len(crops), 2):
-        row = crops[i:i+2]
-        rows.append([KeyboardButton(c) for c in row])
-    rows.append([KeyboardButton("⬅️ رجوع للقائمة")])
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
-
-def get_weather_menu(back_text="⬅️ رجوع للقائمة"):
-    keyboard = [
-        [KeyboardButton("📍 أرسل موقعي", request_location=True)],
-        [KeyboardButton(back_text)]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-# ======================
-# دوال الطقس
-# ======================
-def fetch_weather_by_coords(lat, lon):
-    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}&units=metric&lang=ar"
-    try:
-        r = requests.get(url)
-        data = r.json()
-        if data.get("cod") != 200:
-            return "❌ لم أتمكن من جلب الطقس حالياً."
-        temp = data["main"]["temp"]
-        desc = data["weather"][0]["description"]
-        city = data["name"]
-        return f"🌍 الموقع: {city}\n🌡 الحرارة: {temp}°C\n☁️ الحالة: {desc}"
-    except Exception:
-        return "⚠️ خطأ في الاتصال بموقع الطقس."
-
-def fetch_forecast_by_coords(lat, lon, days=3):
-    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly,alerts,current&appid={OPENWEATHER_API_KEY}&units=metric&lang=ar"
-    try:
-        r = requests.get(url)
-        data = r.json()
-        if "daily" not in data:
-            return "❌ لم أتمكن من جلب توقعات الأيام القادمة."
-        text = "📅 توقعات الطقس للأيام القادمة:\n\n"
-        for i, day in enumerate(data["daily"][:days]):
-            temp_min = day["temp"]["min"]
-            temp_max = day["temp"]["max"]
-            desc = day["weather"][0]["description"]
-            text += f"اليوم {i+1}:\n🌡 الصغرى: {temp_min}°C — الكبرى: {temp_max}°C\n☁️ {desc}\n\n"
-        return text
-    except Exception:
-        return "⚠️ خطأ في الاتصال بموقع الطقس."
+subscribers = set()  # يمكن لاحقًا حفظها في ملف JSON
 
 # ======================
 # أوامر البوت
@@ -200,10 +82,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================
 async def daily_job(app: Application):
     for chat_id in subscribers:
-        msg = random.choice([
-            fetch_weather_by_coords(35.5, 35.8),  # يمكن تعديل الإحداثيات حسب الحاجة
-            f"🌱 نصيحة زراعية: {random.choice(random_tips)}"
-        ])
+        msg = get_random_tip()
         try:
             await app.bot.send_message(chat_id=chat_id, text=msg)
         except Exception as e:
