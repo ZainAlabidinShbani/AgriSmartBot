@@ -5,7 +5,7 @@ from advice import crops
 def get_main_menu():
     keyboard = [
         [KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل")],
-        [KeyboardButton("🌦 الطقس الحالي"), KeyboardButton("📅 توقعات 3 أيام")],
+        [KeyboardButton("📅 توقعات 3 أيام"), KeyboardButton("🌦 الطقس الحالي")],
         [KeyboardButton("🗺 الخرائط الزراعية")],
         [KeyboardButton("/subscribe"), KeyboardButton("/unsubscribe")]
     ]
