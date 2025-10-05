@@ -8,6 +8,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from advice import crops, crop_advices, get_random_tip
 from weather import fetch_weather_by_coords, fetch_forecast_by_coords
+from ai_helper import ask_ai
+
 
 # ======================
 # إعداد متغيرات البيئة
@@ -73,13 +75,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     context.user_data["last_choice"] = text
 
+    # ---------- الذكاء الاصطناعي ----------
+    if text == "🤖 الاستعانة بالذكاء الاصطناعي":
+        await update.message.reply_text("💬 أرسل سؤالك الزراعي وسأجيبك بالذكاء الاصطناعي:", reply_markup=get_main_menu())
+        context.user_data["awaiting_ai_question"] = True
+        return
+
+    if context.user_data.get("awaiting_ai_question"):
+        context.user_data["awaiting_ai_question"] = False
+        await update.message.reply_text("⏳ جاري التفكير...")
+        try:
+            reply = ask_ai(text)
+            await update.message.reply_text(reply, reply_markup=get_main_menu())
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}", reply_markup=get_main_menu())
+        return
+    # --------------------------------------
+
     if text == "🌾 المحاصيل":
         await update.message.reply_text("📋 اختر المحصول:", reply_markup=get_crops_menu())
 
     elif text in crops:
         info = crop_advices.get(text, {})
         if info:
-            # إرسال كل قسم في رسالة منفصلة
             await update.message.reply_text(f"📌 نصائح موسعة لـ {text}:", reply_markup=get_crops_menu())
             await update.message.reply_text(f"🌱 طرق الزراعة:\n{info['طرق_الزراعة']}")
             await update.message.reply_text(f"🗓 المواعيد الموسمية:\n{info['المواعيد']}")
@@ -90,9 +108,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⚠️ تحذيرات مهمة:\n{info['تحذيرات']}")
         else:
             await update.message.reply_text("❌ لا توجد معلومات متاحة لهذا المحصول.", reply_markup=get_crops_menu())
-
-    elif text == "🤖 الاستعانة بالذكاء الاصطناعي":
-        await update.message.reply_text("🚧 ميزة الذكاء الاصطناعي غير مفعلة حالياً.", reply_markup=get_main_menu())
 
     elif text == "🌦 الطقس الحالي":
         await update.message.reply_text("📍 أرسل موقعك للحصول على الطقس الحالي:", reply_markup=get_weather_menu())
@@ -146,18 +161,15 @@ def start_scheduler(app: Application):
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # أوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", start))
     app.add_handler(CommandHandler("menu", start))
     app.add_handler(CommandHandler("subscribe", subscribe))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
 
-    # رسائل ونصوص
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 
-    # بدء جدولة التنبيهات اليومية
     start_scheduler(app)
 
     print("✅ البوت يعمل — استعد لاستقبال الرسائل.")
