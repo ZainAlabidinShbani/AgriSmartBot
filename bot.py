@@ -1,19 +1,24 @@
 # bot.py
 import os
+import requests
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
-# تحميل متغيرات البيئة من ملف .env
+# تحميل متغيرات البيئة
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+
 if not TELEGRAM_TOKEN:
-    raise RuntimeError("❌ TELEGRAM_TOKEN غير محدد! أضف المتغير في .env أو Environment Variables")
+    raise RuntimeError("❌ TELEGRAM_TOKEN غير محدد!")
+if not OPENWEATHER_API_KEY:
+    raise RuntimeError("❌ OPENWEATHER_API_KEY غير محدد!")
 
 # قائمة المحاصيل السورية
 crops = ["قمح", "زيتون", "قطن", "عنب", "حمضيات"]
 
-# قاعدة بيانات نصائح محسنة
+# قاعدة بيانات نصائح
 crop_advices = {
     "قمح": [
         "💧 الري: يفضل الري كل 15-20 يوم بالربيع، وتقليل الري عند امتلاء السنابل.",
@@ -52,30 +57,48 @@ crop_advices = {
     ]
 }
 
-# القائمة الرئيسية مقسمة عمودين
+# القائمة الرئيسية
 def get_main_menu():
     keyboard = [
-        [ KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل"),],
+        [KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل")],
         [KeyboardButton("🌦 توقعات الطقس"), KeyboardButton("🗺 الخرائط الزراعية")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# قائمة المحاصيل مقسمة عمودين
+# قائمة المحاصيل
 def get_crops_menu():
-    # تقسيم المحاصيل إلى صفوف كل صف فيه زرّين
     rows = []
     for i in range(0, len(crops), 2):
         row = crops[i:i+2]
         rows.append([KeyboardButton(c) for c in row])
-    # زر رجوع
     rows.append([KeyboardButton("⬅️ رجوع للقائمة")])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+# قائمة الطقس
+def get_weather_menu():
+    keyboard = [
+        [KeyboardButton("📍 أرسل موقعي", request_location=True)],
+        [KeyboardButton("⬅️ رجوع للقائمة")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+# دالة جلب الطقس
+def get_weather(lat, lon):
+    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}&units=metric&lang=ar"
+    r = requests.get(url)
+    data = r.json()
+    if data.get("cod") != 200:
+        return "❌ لم أتمكن من جلب الطقس حالياً."
+    temp = data["main"]["temp"]
+    desc = data["weather"][0]["description"]
+    city = data["name"]
+    return f"🌍 الموقع: {city}\n🌡 الحرارة: {temp}°C\n☁️ الحالة: {desc}"
 
 # /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👨‍🌾 أهلاً بك! اختر من القائمة:", reply_markup=get_main_menu())
 
-# استقبال الرسائل (من الكيبورد)
+# استقبال النصوص
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -91,13 +114,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚧 ميزة الذكاء الاصطناعي غير مفعلة حالياً.", reply_markup=get_main_menu())
 
     elif text == "🌦 توقعات الطقس":
-        await update.message.reply_text("🌦 ميزة توقعات الطقس قيد التطوير 🚧", reply_markup=get_main_menu())
+        await update.message.reply_text("📍 أرسل موقعك للحصول على الطقس:", reply_markup=get_weather_menu())
 
     elif text == "🗺 الخرائط الزراعية":
         await update.message.reply_text("🗺 ميزة الخرائط الزراعية قيد التطوير 🚧", reply_markup=get_main_menu())
 
     elif text == "⬅️ رجوع للقائمة":
         await update.message.reply_text("⬅️ رجعت للقائمة الرئيسية.\nاختر من جديد:", reply_markup=get_main_menu())
+
+# استقبال الموقع
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loc = update.message.location
+    if loc:
+        weather = get_weather(loc.latitude, loc.longitude)
+        await update.message.reply_text(weather, reply_markup=get_main_menu())
 
 # main
 def main():
@@ -106,8 +136,9 @@ def main():
     app.add_handler(CommandHandler("help", start))
     app.add_handler(CommandHandler("menu", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 
-    print("✅ البوت يعمل — استعد لاستقبال الرسائل (ReplyKeyboard).")
+    print("✅ البوت يعمل — استعد لاستقبال الرسائل.")
     app.run_polling()
 
 if __name__ == "__main__":
