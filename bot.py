@@ -9,7 +9,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from advice import crops, crop_advices, get_random_tip
 from weather import fetch_weather_by_coords, fetch_forecast_by_coords
 from ai_helper import ask_ai
-
+from investment_helper import calculate_profit
+from investment_data import investment_examples
 
 # ======================
 # إعداد متغيرات البيئة
@@ -23,7 +24,7 @@ if not TELEGRAM_TOKEN:
 # إعدادات البوت
 # ======================
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-subscribers = set()  # يمكن لاحقاً حفظها في ملف JSON
+subscribers = set()
 
 # ======================
 # القوائم (UI)
@@ -32,7 +33,7 @@ def get_main_menu():
     keyboard = [
         [KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل")],
         [KeyboardButton("📅 توقعات 3 أيام"), KeyboardButton("🌦 الطقس الحالي")],
-        [KeyboardButton("🗺 الخرائط الزراعية")],
+        [KeyboardButton("🗺 الخرائط الزراعية"), KeyboardButton("💰 الاستثمار المتوقع")],
         [KeyboardButton("/subscribe"), KeyboardButton("/unsubscribe")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -51,6 +52,15 @@ def get_weather_menu(back_text="⬅️ رجوع للقائمة"):
         [KeyboardButton(back_text)]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_investment_menu():
+    rows = []
+    crops_list = list(investment_examples.keys())
+    for i in range(0, len(crops_list), 2):
+        row = crops_list[i:i+2]
+        rows.append([KeyboardButton(c) for c in row])
+    rows.append([KeyboardButton("⬅️ رجوع للقائمة")])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 # ======================
 # أوامر البوت
@@ -77,7 +87,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ---------- الذكاء الاصطناعي ----------
     if text == "🤖 الاستعانة بالذكاء الاصطناعي":
-        await update.message.reply_text("💬 أرسل سؤالك الزراعي وسأجيبك بالذكاء الاصطناعي:", reply_markup=get_main_menu())
+        await update.message.reply_text(
+            "💬 أرسل سؤالك الزراعي وسأجيبك بالذكاء الاصطناعي:",
+            reply_markup=get_main_menu()
+        )
         context.user_data["awaiting_ai_question"] = True
         return
 
@@ -92,6 +105,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # --------------------------------------
 
+    # ---------- الاستثمار ----------
+    if text == "💰 الاستثمار المتوقع":
+        await update.message.reply_text("💰 اختر المحصول للاستثمار:", reply_markup=get_investment_menu())
+        context.user_data["awaiting_investment_choice"] = True
+        return
+
+    if context.user_data.get("awaiting_investment_choice"):
+        if text in investment_examples:
+            context.user_data["selected_investment_crop"] = text
+            context.user_data["awaiting_investment_choice"] = False
+            context.user_data["awaiting_area_input"] = True
+            await update.message.reply_text("📏 أدخل مساحة الأرض بالدونم (رقم فقط):")
+            return
+
+    if context.user_data.get("awaiting_area_input"):
+        try:
+            area = float(text)
+            crop_name = context.user_data.get("selected_investment_crop")
+            profit_text = calculate_profit(crop_name, area)
+            await update.message.reply_text(profit_text, reply_markup=get_main_menu())
+        except Exception:
+            await update.message.reply_text("❌ يرجى إدخال رقم صحيح للمساحة.", reply_markup=get_main_menu())
+        finally:
+            context.user_data["awaiting_area_input"] = False
+        return
+
+    # ---------- المحاصيل ----------
     if text == "🌾 المحاصيل":
         await update.message.reply_text("📋 اختر المحصول:", reply_markup=get_crops_menu())
 
@@ -109,18 +149,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ لا توجد معلومات متاحة لهذا المحصول.", reply_markup=get_crops_menu())
 
+    # ---------- الطقس ----------
     elif text == "🌦 الطقس الحالي":
         await update.message.reply_text("📍 أرسل موقعك للحصول على الطقس الحالي:", reply_markup=get_weather_menu())
 
     elif text == "📅 توقعات 3 أيام":
         await update.message.reply_text("📍 أرسل موقعك للحصول على توقعات الطقس لـ 3 أيام:", reply_markup=get_weather_menu())
 
+    # ---------- الخرائط ----------
     elif text == "🗺 الخرائط الزراعية":
         await update.message.reply_text("🗺 ميزة الخرائط الزراعية قيد التطوير 🚧", reply_markup=get_main_menu())
 
+    # ---------- الرجوع للقائمة ----------
     elif text == "⬅️ رجوع للقائمة":
         await update.message.reply_text("⬅️ رجعت للقائمة الرئيسية.\nاختر من جديد:", reply_markup=get_main_menu())
 
+    # ---------- أي رسالة أخرى ----------
     else:
         await update.message.reply_text("❌ لم أفهم رسالتك، اختر من القائمة.", reply_markup=get_main_menu())
 
