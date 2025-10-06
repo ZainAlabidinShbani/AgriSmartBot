@@ -5,8 +5,8 @@ from investment_data import investment_examples  # استيراد المحاصي
 def get_main_menu():
     keyboard = [
         [KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل")],
-        [KeyboardButton("📅 توقعات 3 أيام"), KeyboardButton("🌦 الطقس الحالي")],
         [KeyboardButton("🗺 الخرائط الزراعية"), KeyboardButton("💰 الاستثمار المتوقع")],  # زر جديد
+        [KeyboardButton("📅 توقعات 3 أيام"), KeyboardButton("🌦 الطقس الحالي")],
         [KeyboardButton("/subscribe"), KeyboardButton("/unsubscribe")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
