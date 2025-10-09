@@ -13,7 +13,7 @@ from investment_helper import calculate_profit
 from investment_data import investment_examples
 
 # ======================
-# إعداد متغيرات البيئة
+# Load environment variables
 # ======================
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -21,17 +21,17 @@ if not TELEGRAM_TOKEN:
     raise RuntimeError("❌ TELEGRAM_TOKEN غير محدد!")
 
 # ======================
-# إعدادات البوت
+# Setup logging and subscribers
 # ======================
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 subscribers = set()
 
 # ======================
-# القوائم (UI)
+# Define UI menus
 # ======================
 def get_main_menu():
     keyboard = [
-        [KeyboardButton("🤖 الاستعانة بالذكاء الاصطناعي"), KeyboardButton("🌾 المحاصيل")],
+        [KeyboardButton("🤖 الاستعانة بالذكاء الصناعي"), KeyboardButton("🌾 المحاصيل")],
         [KeyboardButton("📅 توقعات 3 أيام"), KeyboardButton("🌦 الطقس الحالي")],
         [KeyboardButton("🗺 الخرائط الزراعية"), KeyboardButton("💰 الاستثمار المتوقع")],
         [KeyboardButton("/subscribe"), KeyboardButton("/unsubscribe")]
@@ -62,8 +62,15 @@ def get_investment_menu():
     rows.append([KeyboardButton("⬅️ رجوع للقائمة")])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
+def get_ai_menu():
+    """Return AI chat menu with back button"""
+    keyboard = [
+        [KeyboardButton("⬅️ رجوع للقائمة")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 # ======================
-# أوامر البوت
+# Bot commands
 # ======================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👨‍🌾 أهلاً بك! اختر من القائمة:", reply_markup=get_main_menu())
@@ -79,33 +86,39 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ تم إلغاء الاشتراك من التنبيهات.")
 
 # ======================
-# التعامل مع الرسائل
+# Handle messages
 # ======================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     context.user_data["last_choice"] = text
 
-    # ---------- الذكاء الاصطناعي ----------
-    if text == "🤖 الاستعانة بالذكاء الاصطناعي":
-        await update.message.reply_text(
-            "💬 أرسل سؤالك الزراعي وسأجيبك بالذكاء الاصطناعي:",
-            reply_markup=get_main_menu()
-        )
-        context.user_data["awaiting_ai_question"] = True
+    # ---------- AI chat mode ----------
+    if context.user_data.get("ai_chat"):
+        if text == "⬅️ رجوع للقائمة":
+            # Exit AI chat mode
+            context.user_data["ai_chat"] = False
+            await update.message.reply_text("⬅️ عدت للقائمة الرئيسية.", reply_markup=get_main_menu())
+        else:
+            # Respond to AI question
+            await update.message.reply_text("⏳ جاري التفكير...")
+            try:
+                reply = ask_ai(text)
+                await update.message.reply_text(reply, reply_markup=get_ai_menu())
+            except Exception as e:
+                await update.message.reply_text(f"⚠️ حدث خطأ أثناء الاتصال بالذكاء الصناعي: {e}", reply_markup=get_ai_menu())
         return
 
-    if context.user_data.get("awaiting_ai_question"):
-        context.user_data["awaiting_ai_question"] = False
-        await update.message.reply_text("⏳ جاري التفكير...")
-        try:
-            reply = ask_ai(text)
-            await update.message.reply_text(reply, reply_markup=get_main_menu())
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}", reply_markup=get_main_menu())
+    # ---------- User pressed AI button ----------
+    if text == "🤖 الاستعانة بالذكاء الصناعي":
+        context.user_data["ai_chat"] = True
+        await update.message.reply_text(
+            "💬 أرسل سؤالك الزراعي وسأجيبك بالذكاء الصناعي.\nاضغط '⬅️ رجوع للقائمة' للعودة للقائمة الرئيسية.",
+            reply_markup=get_ai_menu()
+        )
         return
     # --------------------------------------
 
-    # ---------- الاستثمار ----------
+    # ---------- Investment ----------
     if text == "💰 الاستثمار المتوقع":
         await update.message.reply_text("💰 اختر المحصول للاستثمار:", reply_markup=get_investment_menu())
         context.user_data["awaiting_investment_choice"] = True
@@ -131,10 +144,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["awaiting_area_input"] = False
         return
 
-    # ---------- المحاصيل ----------
+    # ---------- Crops ----------
     if text == "🌾 المحاصيل":
         await update.message.reply_text("📋 اختر المحصول:", reply_markup=get_crops_menu())
-
     elif text in crops:
         info = crop_advices.get(text, {})
         if info:
@@ -149,27 +161,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ لا توجد معلومات متاحة لهذا المحصول.", reply_markup=get_crops_menu())
 
-    # ---------- الطقس ----------
+    # ---------- Weather ----------
     elif text == "🌦 الطقس الحالي":
         await update.message.reply_text("📍 أرسل موقعك للحصول على الطقس الحالي:", reply_markup=get_weather_menu())
-
     elif text == "📅 توقعات 3 أيام":
         await update.message.reply_text("📍 أرسل موقعك للحصول على توقعات الطقس لـ 3 أيام:", reply_markup=get_weather_menu())
 
-    # ---------- الخرائط ----------
+    # ---------- Maps ----------
     elif text == "🗺 الخرائط الزراعية":
         await update.message.reply_text("🗺 ميزة الخرائط الزراعية قيد التطوير 🚧", reply_markup=get_main_menu())
 
-    # ---------- الرجوع للقائمة ----------
+    # ---------- Return to main menu ----------
     elif text == "⬅️ رجوع للقائمة":
         await update.message.reply_text("⬅️ رجعت للقائمة الرئيسية.\nاختر من جديد:", reply_markup=get_main_menu())
 
-    # ---------- أي رسالة أخرى ----------
+    # ---------- Any other message ----------
     else:
         await update.message.reply_text("❌ لم أفهم رسالتك، اختر من القائمة.", reply_markup=get_main_menu())
 
 # ======================
-# التعامل مع الموقع
+# Handle location
 # ======================
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
@@ -184,7 +195,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(weather, reply_markup=get_main_menu())
 
 # ======================
-# التنبيهات اليومية
+# Daily notifications
 # ======================
 async def daily_job(app: Application):
     for chat_id in subscribers:
@@ -192,7 +203,7 @@ async def daily_job(app: Application):
         try:
             await app.bot.send_message(chat_id=chat_id, text=msg)
         except Exception as e:
-            logging.error(f"خطأ عند الإرسال إلى {chat_id}: {e}")
+            logging.error(f"Error sending to {chat_id}: {e}")
 
 def start_scheduler(app: Application):
     scheduler = BackgroundScheduler(timezone="Asia/Damascus")
@@ -200,7 +211,7 @@ def start_scheduler(app: Application):
     scheduler.start()
 
 # ======================
-# تشغيل البوت
+# Run bot
 # ======================
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
