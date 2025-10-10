@@ -3,13 +3,23 @@ import os
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
+def check_api_key():
+    if not OPENWEATHER_API_KEY:
+        return "❌ لم يتم ضبط مفتاح OpenWeather API في الإعدادات."
+    return None
+
 def fetch_weather_by_coords(lat, lon):
-    url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}&units=metric&lang=ar"
+    err = check_api_key()
+    if err:
+        return err
+
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}&units=metric&lang=ar"
     try:
-        r = requests.get(url)
+        r = requests.get(url, timeout=10)
         data = r.json()
+
         if data.get("cod") != 200:
-            return "❌ لم أتمكن من جلب الطقس حالياً."
+            return f"❌ لم أتمكن من جلب الطقس حالياً.\n🔹 رمز الخطأ: {data.get('message', 'غير معروف')}"
 
         temp = data["main"]["temp"]
         temp_min = data["main"]["temp_min"]
@@ -17,25 +27,37 @@ def fetch_weather_by_coords(lat, lon):
         humidity = data["main"]["humidity"]
         wind_speed = data["wind"]["speed"]
         desc = data["weather"][0]["description"]
-        city = data["name"]
+        city = data.get("name", "موقعك الحالي")
 
         return (
             f"🌍 الموقع: {city}\n"
-            f"🌡 الحرارة: {temp}°C (⬆️ {temp_max}°C / ⬇️ {temp_min}°C)\n"
+            f"🌡 الحرارة: {temp:.1f}°C (⬆️ {temp_max:.1f}°C / ⬇️ {temp_min:.1f}°C)\n"
             f"💧 الرطوبة: {humidity}%\n"
             f"🌬️ الرياح: {wind_speed} م/ث\n"
             f"☁️ الحالة: {desc}"
         )
-    except Exception:
-        return "⚠️ خطأ في الاتصال بموقع الطقس."
 
-def fetch_forecast_by_coords(lat, lon, days=7):
-    url = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly,alerts,current&appid={OPENWEATHER_API_KEY}&units=metric&lang=ar"
+    except requests.exceptions.RequestException:
+        return "⚠️ تعذر الاتصال بخدمة الطقس، تحقق من الإنترنت أو أعد المحاولة لاحقاً."
+    except Exception as e:
+        return f"⚠️ حدث خطأ غير متوقع: {e}"
+
+
+def fetch_forecast_by_coords(lat, lon, days=3):
+    err = check_api_key()
+    if err:
+        return err
+
+    # تحديث إلى واجهة One Call 3.0
+    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,hourly,alerts,current&appid={OPENWEATHER_API_KEY}&units=metric&lang=ar"
+
     try:
-        r = requests.get(url)
+        r = requests.get(url, timeout=10)
         data = r.json()
+
         if "daily" not in data:
-            return "❌ لم أتمكن من جلب توقعات الأيام القادمة."
+            msg = data.get("message", "لم يتم العثور على بيانات الطقس.")
+            return f"❌ لم أتمكن من جلب توقعات الأيام القادمة.\n🔹 السبب: {msg}"
 
         text = "📅 توقعات الطقس للأيام القادمة:\n\n"
         for i, day in enumerate(data["daily"][:days]):
@@ -45,12 +67,15 @@ def fetch_forecast_by_coords(lat, lon, days=7):
             humidity = day["humidity"]
             wind_speed = day["wind_speed"]
             text += (
-                f"اليوم {i+1}:\n"
-                f"🌡 الصغرى: {temp_min}°C — الكبرى: {temp_max}°C\n"
+                f"📆 اليوم {i+1}:\n"
+                f"🌡 الصغرى: {temp_min:.1f}°C — الكبرى: {temp_max:.1f}°C\n"
                 f"💧 الرطوبة: {humidity}%\n"
                 f"🌬️ الرياح: {wind_speed} م/ث\n"
                 f"☁️ {desc}\n\n"
             )
-        return text
-    except Exception:
-        return "⚠️ خطأ في الاتصال بموقع الطقس."
+        return text.strip()
+
+    except requests.exceptions.RequestException:
+        return "⚠️ تعذر الاتصال بخدمة التوقعات، حاول لاحقاً."
+    except Exception as e:
+        return f"⚠️ حدث خطأ غير متوقع أثناء جلب التوقعات: {e}"
