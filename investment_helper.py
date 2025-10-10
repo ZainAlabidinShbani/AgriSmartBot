@@ -11,12 +11,11 @@ def calculate_profit(crop_name, area_dunum=1):
     profit = total_revenue - total_cost
 
     return (
-        f"📊 تقدير استثماري لمحرز {crop_name}:\n"
-        f"📌 المساحة: {area_dunum} دونم\n"
-        f"💰 التكلفة الإجمالية: {total_cost} ل.س\n"
-        f"🌾 الإنتاج المتوقع: {total_yield} كغ\n"
-        f"💵 الإيرادات المتوقعة: {total_revenue} ل.س\n"
-        f"✅ الربح الصافي المتوقع: {profit} ل.س\n"
-        f"🗓 فترة الحصاد: {', '.join(map(str, data['harvest_months']))} الشهر/أشهر"
+        f"📊 التقدير الاستثماري لمحصول {crop_name}:\n"
+        f"📏 المساحة: {area_dunum} دونم\n"
+        f"💰 التكلفة الإجمالية: {total_cost:.2f} دولار\n"
+        f"🌾 الإنتاج المتوقع: {total_yield:,} كغ\n"
+        f"💵 الإيرادات المتوقعة: {total_revenue:.2f} دولار\n"
+        f"✅ الربح الصافي المتوقع: {profit:.2f} دولار\n"
+        f"🗓 أشهر الحصاد: {', '.join(map(str, data['harvest_months']))}"
     )
- 
