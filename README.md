@@ -52,9 +52,3 @@ If you add new libraries, update requirements.txt:
 ```bash
 pip freeze > requirements.txt
 ```
-
-#### Notes
-
-- Do not push the venv folder to GitHub. It is already included in .gitignore.
-- Make sure you have Python 3.8+ installed.
-- This setup works for both local machines and VMs provided for this project.
